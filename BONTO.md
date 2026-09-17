@@ -1,39 +1,68 @@
 # Bonto setup
 
-Payson’s Movies is configured so Bonto needs only one user-supplied secret.
+Payson’s Movies is designed to run the custom frontend and the original CinePro Core backend inside one Bonto app.
 
-## Required secret
+## Required
+
+Set one environment variable:
 
 ```env
 TMDB_API_KEY=your_tmdb_v3_api_key_here
 ```
 
-## Do not manually set
-
-- `PORT`
-- `HOST`
-- Redis variables
-- Docker settings
-- build output paths
-
-Bonto supplies `PORT`, and the server automatically binds to `0.0.0.0`.
-
-## Start command
-
-Use the repository default:
+Then deploy the repository normally. Bonto installs the npm dependencies and runs:
 
 ```bash
 npm start
 ```
 
-No build command is required and there are no runtime npm dependencies to install.
+## What starts
+
+`start.mjs` launches the playback engine on a private `127.0.0.1` port and then starts the Payson’s Movies public server on Bonto’s assigned `PORT`.
+
+Do not manually set the public `PORT` or `HOST`.
 
 ## Health check
 
-After deployment, open:
+Open:
 
 ```text
 https://YOUR-BONTO-DOMAIN/api/health
 ```
 
-A correctly configured deployment returns JSON with `ok: true` and `configured: true`. Then open the root Bonto URL for the full UI.
+A healthy deployment should report:
+
+```json
+{
+  "ok": true,
+  "name": "Payson’s Movies",
+  "tmdb": "configured",
+  "playback": "operational"
+}
+```
+
+The `providers` count confirms that the playback backend discovered providers.
+
+## Optional backend configuration
+
+These are not required for the normal Bonto configuration, but remain supported:
+
+```env
+CACHE_TYPE=memory
+STREMIO_ADDON=false
+MCP_ENABLED=false
+CORS_ORIGIN=*
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+PLAYBACK_RESOLVE_TIMEOUT_MS=65000
+PLAYBACK_PROBE_TIMEOUT_MS=2200
+PLAYBACK_PROBE_LIMIT=6
+PLAYBACK_PROBE_SOURCES=true
+```
+
+Use Redis only if you intentionally configure an external Redis service.
+
+## Troubleshooting
+
+If metadata works but Watch Now does not, check `/api/health`. If `playback` is `down`, inspect the Bonto console for lines prefixed with `[Payson playback]`. The public site can remain online even if the child playback process is restarting.

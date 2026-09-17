@@ -1,8 +1,13 @@
-const CACHE = 'paysons-movies-shell-v1';
+const CACHE = 'paysons-movies-shell-v5';
 const SHELL = [
   '/',
   '/styles.css',
+  '/player.css',
+  '/episode-browser.css',
   '/app.js',
+  '/episode-browser.js',
+  '/player.js',
+  '/vendor/hls.min.js',
   '/manifest.webmanifest',
   '/assets/logo.svg'
 ];
@@ -13,9 +18,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-  );
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))));
   self.clients.claim();
 });
 
@@ -24,11 +27,14 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/stremio/') || url.pathname.startsWith('/mcp/')) return;
+  if (request.destination === 'video' || request.destination === 'audio') return;
 
   event.respondWith(
     fetch(request)
       .then((response) => {
+        if (!response.ok) return response;
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put(request, copy));
         return response;

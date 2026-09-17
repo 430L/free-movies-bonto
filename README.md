@@ -1,63 +1,116 @@
 # Payson’s Movies
 
-Payson’s Movies is a custom movie and TV discovery site with a premium cinematic glass interface. It is designed to deploy cleanly on Bonto with **one secret** and no runtime npm dependencies.
+Payson’s Movies is a custom movie and TV interface built on top of the original **CinePro Core** playback engine. The goal of this repository is to replace the stock frontend experience while keeping the backend provider/resolver functionality intact.
 
-## Current build
+## Architecture
 
-- Original Payson’s Movies branding and film-reel glass logo
-- Responsive desktop + mobile glass UI
-- Rotating featured marquee
-- Trending, top movies, now playing, prestige TV, and coming soon shelves
-- Movie / TV browsing filters
-- Live TMDB search
-- Full title detail view
-- Cast, metadata, ratings, recommendations, and similar titles
-- YouTube trailer playback
-- Local My List watchlist
-- Local Recently Viewed history
-- Keyboard-accessible cards and controls
-- Installable PWA shell
-- Zero-dependency Node 20+ backend
-- Bonto-safe dynamic `PORT` handling
-- Server-side TMDB key protection
-- API response caching and request timeouts
-- Basic security headers and CSP
+```text
+Browser
+  │
+  ├─ Payson’s Movies UI
+  │    ├─ TMDB discovery / metadata
+  │    ├─ custom full-screen player
+  │    ├─ server / quality / audio / subtitle controls
+  │    └─ playback history + resume
+  │
+  └─ same-origin playback API
+       │
+       └─ CinePro Core (private localhost child process)
+            └─ OMSS providers / source resolution
+```
+
+CinePro Core runs on a private loopback port. The public Bonto port is owned by Payson’s Movies, which exposes the custom UI plus same-origin playback routes. The browser does not need a second backend URL.
+
+## Features
+
+- Payson’s Movies custom glass-era branding and UI
+- TMDB-powered discovery, search, artwork, cast, recommendations, seasons, and episodes
+- CinePro Core provider discovery and OMSS movie/TV source resolution
+- all streamable sources returned by the backend remain available in the server picker
+- automatic source ranking using quality plus measured startup latency and recent reliability
+- automatic failover without retry loops when a source fails
+- one automatic source-list refresh after every current source fails
+- stale-request protection when rapidly switching titles, seasons, or episodes
+- same-origin rewriting for streams, manifests, and subtitle URLs
+- byte-range passthrough for seekable streams
+- manual server selection
+- HLS.js playback plus native-HLS fallback
+- direct browser-supported video playback
+- HLS adaptive quality selection
+- HLS audio-track selection
+- WebVTT and basic SRT subtitle support
+- playback speed control
+- season / episode selection and automatic next episode
+- resume position saved locally
+- separate Watch Now and Trailer actions
+- provider availability fallback when no playable source is returned
+- PWA shell caching that explicitly avoids caching media/proxy traffic
 
 ## Bonto deployment
 
-1. Import this repository in Bonto.
-2. Add one environment variable:
+The only required secret is:
 
 ```env
 TMDB_API_KEY=your_tmdb_v3_api_key_here
 ```
 
-3. Use the default start script:
+Bonto runs:
 
 ```bash
 npm start
 ```
 
-That runs `node server.js`. You do **not** need to configure `PORT`, `HOST`, Redis, Docker, a database, or a build command.
+which starts `start.mjs`. The supervisor launches CinePro Core privately, waits for it to become available, then starts the Payson’s Movies public server.
 
-## Local development
+You do not need to configure a second Bonto project or manually set `PORT`.
 
-Create `.env` from `.env.example`, set `TMDB_API_KEY`, then run:
+## Optional CinePro settings
 
-```bash
-npm start
+The supervisor passes through the normal CinePro settings. These are optional:
+
+```env
+CACHE_TYPE=memory
+STREMIO_ADDON=false
+MCP_ENABLED=false
+CORS_ORIGIN=*
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+PLAYBACK_RESOLVE_TIMEOUT_MS=65000
+PLAYBACK_PROBE_TIMEOUT_MS=2200
+PLAYBACK_PROBE_LIMIT=6
+PLAYBACK_PROBE_SOURCES=true
 ```
 
-Open `http://localhost:3000`.
+Memory cache is used by default, so Redis is not required.
+
+## Endpoints
+
+Payson’s Movies endpoints:
+
+```text
+GET  /api/health
+GET  /api/home
+GET  /api/search?q=...
+GET  /api/title/:type/:tmdbId
+GET  /api/tv/:tmdbId/season/:season
+GET  /api/playback/providers
+GET  /api/playback/resolve?type=movie&id=...
+GET  /api/playback/resolve?type=tv&id=...&season=...&episode=...
+POST /api/playback/refresh
+```
+
+The underlying OMSS interface is also proxied on the same origin under `/v1/*`. If enabled, Stremio routes are proxied under `/stremio/*`.
 
 ## Validation
 
 ```bash
 npm run check
+npm test
 ```
 
-The project has no external Node runtime dependencies.
+The integration test runs the public server against local mock TMDB and CinePro/OMSS backends. It verifies movie playback resolution, TV episode resolution, provider health parsing, `responseId` refresh behavior, same-origin manifest/subtitle rewriting, and HTTP byte-range passthrough without contacting external streaming providers.
 
-## Playback scope
+## Third-party software
 
-This build uses TMDB for discovery metadata/images and YouTube for trailers. It does not bundle or proxy third-party copyrighted movie streams. Licensed or self-hosted playback can be connected later through a dedicated backend playback route.
+This project depends on CinePro Core and hls.js. Their original licenses and upstream attribution remain applicable. Payson’s Movies branding applies to this repository’s own UI and integration layer; it does not change third-party authorship or licensing.
