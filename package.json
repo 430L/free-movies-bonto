@@ -1,14 +1,17 @@
 {
   "name": "paysons-movies",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "Payson’s Movies - a cinematic glass movie discovery UI with a zero-dependency Node backend.",
+  "description": "Payson’s Movies - cinematic movie discovery and authorized multi-source playback.",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js"
+    "check": "node --check server.js && node --check public/app.js && node --check public/player.js"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.15"
   }
 }
