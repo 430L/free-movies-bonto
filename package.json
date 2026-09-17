@@ -1,0 +1,17 @@
+{
+  "name": "cinepro-core-bonto",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-config Bonto launcher for CinePro Core. Only TMDB_API_KEY is required.",
+  "scripts": {
+    "start": "node bonto-start.mjs"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "@cinepro/core": "github:cinepro-org/core#main",
+    "tsx": "^4.19.1"
+  }
+}
