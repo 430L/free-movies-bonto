@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Payson’s Movies</title>
+  <desc id="desc">A translucent blue-silver film reel emblem inspired by 1920s cinema and early 2000s aqua interfaces.</desc>
+  <defs>
+    <radialGradient id="reel" cx="35%" cy="22%" r="78%">
+      <stop offset="0" stop-color="#fff" stop-opacity=".98"/>
+      <stop offset=".2" stop-color="#dff4ff" stop-opacity=".92"/>
+      <stop offset=".5" stop-color="#8ec8f4" stop-opacity=".86"/>
+      <stop offset=".75" stop-color="#5a83ba" stop-opacity=".78"/>
+      <stop offset="1" stop-color="#d8ecff" stop-opacity=".9"/>
+    </radialGradient>
+    <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fdff"/>
+      <stop offset=".22" stop-color="#8fb3d6"/>
+      <stop offset=".44" stop-color="#fff"/>
+      <stop offset=".65" stop-color="#4b78aa"/>
+      <stop offset=".84" stop-color="#d7edff"/>
+      <stop offset="1" stop-color="#6f94bb"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".72"/>
+      <stop offset=".35" stop-color="#bce8ff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#5ba7e2" stop-opacity=".36"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="blur"/>
+      <feOffset dy="18" result="off"/>
+      <feColorMatrix in="off" type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.08 0 0 0 0 0.16 0 0 0 .7 0"/>
+      <feBlend in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <circle cx="512" cy="380" r="320" fill="url(#chrome)" stroke="#eefaff" stroke-width="14"/>
+    <circle cx="512" cy="380" r="300" fill="url(#reel)" stroke="#4f7ba9" stroke-width="7"/>
+    <g fill="#0e243b" stroke="#bce3ff" stroke-width="8">
+      <circle cx="512" cy="192" r="72"/>
+      <circle cx="683" cy="301" r="72"/>
+      <circle cx="620" cy="505" r="72"/>
+      <circle cx="404" cy="505" r="72"/>
+      <circle cx="341" cy="301" r="72"/>
+    </g>
+    <circle cx="512" cy="380" r="92" fill="url(#chrome)" stroke="#eefaff" stroke-width="10"/>
+    <circle cx="512" cy="380" r="68" fill="url(#glass)" stroke="#5886b4" stroke-width="4"/>
+    <path d="M512 315 529 363 578 380 529 397 512 445 495 397 446 380 495 363Z" fill="#f8fdff" stroke="#477ba9" stroke-width="4"/>
+    <path d="M90 585c160 42 302 62 425 62 151 0 295-26 430-79l29 91c-149 61-302 91-462 91-153 0-302-24-450-74Z" fill="url(#glass)" stroke="url(#chrome)" stroke-width="10"/>
+    <path d="M135 704c160-33 594-33 754 0l-42 206c-211 45-459 45-670 0Z" fill="url(#glass)" stroke="url(#chrome)" stroke-width="12"/>
+    <path d="M163 731c163-23 535-23 698 0" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="4"/>
+    <text x="512" y="820" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="94" font-weight="700" font-style="italic" fill="url(#chrome)" stroke="#365f88" stroke-width="2">Payson’s</text>
+    <text x="512" y="885" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="700" letter-spacing="17" fill="#d9efff" stroke="#3f668a" stroke-width="1.5">MOVIES</text>
+  </g>
+</svg>

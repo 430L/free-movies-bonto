@@ -1,50 +1,63 @@
-# CinePro Core — Bonto Edition
+# Payson’s Movies
 
-A Bonto-specific launcher for [CinePro Core](https://github.com/cinepro-org/core) that removes the deployment configuration work that caused restart loops on Bonto.
+Payson’s Movies is a custom movie and TV discovery site with a premium cinematic glass interface. It is designed to deploy cleanly on Bonto with **one secret** and no runtime npm dependencies.
 
-## What you need to configure
+## Current build
 
-Only one environment variable:
+- Original Payson’s Movies branding and film-reel glass logo
+- Responsive desktop + mobile glass UI
+- Rotating featured marquee
+- Trending, top movies, now playing, prestige TV, and coming soon shelves
+- Movie / TV browsing filters
+- Live TMDB search
+- Full title detail view
+- Cast, metadata, ratings, recommendations, and similar titles
+- YouTube trailer playback
+- Local My List watchlist
+- Local Recently Viewed history
+- Keyboard-accessible cards and controls
+- Installable PWA shell
+- Zero-dependency Node 20+ backend
+- Bonto-safe dynamic `PORT` handling
+- Server-side TMDB key protection
+- API response caching and request timeouts
+- Basic security headers and CSP
 
-```text
-TMDB_API_KEY=your_tmdb_api_key
+## Bonto deployment
+
+1. Import this repository in Bonto.
+2. Add one environment variable:
+
+```env
+TMDB_API_KEY=your_tmdb_v3_api_key_here
 ```
 
-Everything else is handled automatically:
+3. Use the default start script:
 
-- Uses Bonto's injected `PORT`
-- Binds CinePro to `0.0.0.0`
-- Uses in-memory caching, so Redis is not required
-- Enables permissive CORS (`*`)
-- Disables Stremio and MCP by default
-- Runs the TypeScript server directly with `tsx`
-- Does not compile to `dist/` at startup, avoiding Bonto's file-watcher restart loop
-- Targets Node.js 20, Bonto's default runtime
+```bash
+npm start
+```
 
-## Deploy to Bonto
+That runs `node server.js`. You do **not** need to configure `PORT`, `HOST`, Redis, Docker, a database, or a build command.
 
-1. Upload these files to a GitHub repository.
-2. Connect/import that repository into Bonto.
-3. In Bonto, add one Environment Variable / Secret:
+## Local development
 
-   ```text
-   TMDB_API_KEY = <your TMDB v3 API key>
-   ```
+Create `.env` from `.env.example`, set `TMDB_API_KEY`, then run:
 
-4. Let Bonto install dependencies and start the app.
+```bash
+npm start
+```
 
-Do not manually add `PORT`, `HOST`, Redis variables, `CACHE_TYPE`, or `NODE_ENV`.
+Open `http://localhost:3000`.
 
-Bonto detects `package.json`, runs `npm install`, runs the `start` script, and injects `PORT` automatically.
+## Validation
 
-## Why this is structured as a launcher
+```bash
+npm run check
+```
 
-The upstream CinePro repository's normal `start` command compiles TypeScript into `dist/` before launching. Bonto automatically restarts Node apps when project files change, so writing `dist/` during startup can produce a build/restart loop. This edition installs the pinned upstream CinePro Core commit `98ba005f75d2675877774f5a676b3bc1c4150c27` as a dependency and starts its source directly, so startup does not modify watched project files. The ZIP is intentionally a deployment wrapper rather than a vendored copy of every upstream source file.
+The project has no external Node runtime dependencies.
 
-The upstream package is intentionally kept separate so provider updates can continue coming from `cinepro-org/core` without maintaining a second copy of every provider.
+## Playback scope
 
-## Upstream
-
-CinePro Core: https://github.com/cinepro-org/core
-
-CinePro Core is distributed under its upstream license and terms. This launcher does not host media itself; use it only in ways permitted by applicable law and provider terms.
+This build uses TMDB for discovery metadata/images and YouTube for trailers. It does not bundle or proxy third-party copyrighted movie streams. Licensed or self-hosted playback can be connected later through a dedicated backend playback route.

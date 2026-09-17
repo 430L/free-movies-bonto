@@ -1,21 +1,39 @@
-# Bonto settings
+# Bonto setup
 
-The repository is preconfigured for Bonto.
+Payson’s Movies is configured so Bonto needs only one user-supplied secret.
 
-Required secret:
+## Required secret
 
-```text
-TMDB_API_KEY=<your TMDB v3 API key>
+```env
+TMDB_API_KEY=your_tmdb_v3_api_key_here
 ```
 
-No other environment variables are required.
+## Do not manually set
 
-Expected startup sequence:
+- `PORT`
+- `HOST`
+- Redis variables
+- Docker settings
+- build output paths
 
-```text
-npm install
+Bonto supplies `PORT`, and the server automatically binds to `0.0.0.0`.
+
+## Start command
+
+Use the repository default:
+
+```bash
 npm start
-[cinepro-bonto] Starting CinePro Core on 0.0.0.0:<Bonto PORT>
 ```
 
-If Bonto shows an install in progress, wait for it to finish and restart once. You should not see the old repeating `tsc` / `nodemon restarting due to changes` loop because this launcher does not run `tsc` at startup.
+No build command is required and there are no runtime npm dependencies to install.
+
+## Health check
+
+After deployment, open:
+
+```text
+https://YOUR-BONTO-DOMAIN/api/health
+```
+
+A correctly configured deployment returns JSON with `ok: true` and `configured: true`. Then open the root Bonto URL for the full UI.

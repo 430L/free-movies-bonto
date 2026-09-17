@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payson’s Movies</title>
+  <meta name="description" content="Payson’s Movies — a cinematic glass movie discovery experience." />
+  <meta name="theme-color" content="#070a13" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/assets/logo.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <div class="page-shell">
+    <header class="topbar glass-panel">
+      <div class="brand-wrap">
+        <img class="brand-logo" src="/assets/logo.svg" alt="Payson’s Movies logo" />
+        <div>
+          <div class="brand-name">Payson’s Movies</div>
+          <div class="brand-tag">A cinematic glass-era movie library</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="nav-tab is-active" data-filter="all">Home</button>
+        <button class="nav-tab" data-filter="movie">Movies</button>
+        <button class="nav-tab" data-filter="tv">TV Shows</button>
+        <button class="nav-tab" data-filter="list">My List</button>
+      </nav>
+
+      <div class="toolbar">
+        <div class="search-wrap">
+          <input id="searchInput" type="search" placeholder="Search titles, franchises, and series" autocomplete="off" />
+          <button id="clearSearch" class="ghost-button compact">Clear</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="hero" class="hero glass-hero loading-state">
+        <div class="hero-backdrop"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Featured Tonight</div>
+          <h1 class="hero-title">Loading your marquee experience…</h1>
+          <p class="hero-overview">Curated discovery, poster shelves, and cinematic detail views are on the way.</p>
+          <div class="hero-meta"></div>
+          <div class="hero-actions">
+            <button id="heroPlay" class="primary-button" disabled>Watch Trailer</button>
+            <button id="heroDetails" class="secondary-button" disabled>More Info</button>
+            <button id="heroList" class="ghost-button" disabled>Add to My List</button>
+          </div>
+          <div class="hero-carousel-controls" aria-label="Featured titles">
+            <button id="heroPrev" class="carousel-button" type="button" aria-label="Previous featured title">‹</button>
+            <div id="heroDots" class="hero-dots"></div>
+            <button id="heroNext" class="carousel-button" type="button" aria-label="Next featured title">›</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="searchResults" class="content-block hidden">
+        <div class="section-heading">
+          <div>
+            <p class="section-eyebrow">Search</p>
+            <h2 class="section-title">Results</h2>
+          </div>
+          <p class="section-copy" id="searchMeta"></p>
+        </div>
+        <div id="searchGrid" class="poster-grid"></div>
+      </section>
+
+      <section id="recentlyViewedSection" class="content-block hidden">
+        <div class="section-heading">
+          <div>
+            <p class="section-eyebrow">History</p>
+            <h2 class="section-title">Recently Viewed</h2>
+          </div>
+          <button id="clearHistory" class="ghost-button compact" type="button">Clear History</button>
+        </div>
+        <div id="recentlyViewedGrid" class="poster-grid"></div>
+      </section>
+
+      <section id="myListSection" class="content-block hidden">
+        <div class="section-heading">
+          <div>
+            <p class="section-eyebrow">Personal Shelf</p>
+            <h2 class="section-title">My List</h2>
+          </div>
+          <p class="section-copy">Save titles locally and build your own curated queue.</p>
+        </div>
+        <div id="myListGrid" class="poster-grid"></div>
+      </section>
+
+      <div id="sectionsRoot"></div>
+    </main>
+  </div>
+
+  <div id="detailModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="true"></div>
+    <div class="modal-panel glass-panel">
+      <button class="modal-close" data-close-modal="true" aria-label="Close details">×</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+
+  <div id="videoModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-video="true"></div>
+    <div class="video-panel glass-panel">
+      <button class="modal-close" data-close-video="true" aria-label="Close trailer">×</button>
+      <div class="video-embed-wrap">
+        <iframe id="videoFrame" title="Trailer" src="" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+      </div>
+    </div>
+  </div>
+
+  <template id="rowTemplate">
+    <section class="content-block row-section">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow"></p>
+          <h2 class="section-title"></h2>
+        </div>
+        <p class="section-copy"></p>
+      </div>
+      <div class="shelf-wrap">
+        <button class="shelf-nav shelf-nav-left" type="button" aria-label="Scroll left">‹</button>
+        <div class="poster-row"></div>
+        <button class="shelf-nav shelf-nav-right" type="button" aria-label="Scroll right">›</button>
+      </div>
+    </section>
+  </template>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
