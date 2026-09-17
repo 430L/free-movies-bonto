@@ -1,8 +1,11 @@
-const CACHE = 'paysons-movies-shell-v1';
+const CACHE = 'paysons-movies-shell-v2';
 const SHELL = [
   '/',
   '/styles.css',
+  '/player.css',
   '/app.js',
+  '/player.js',
+  '/vendor/hls.min.js',
   '/manifest.webmanifest',
   '/assets/logo.svg'
 ];
