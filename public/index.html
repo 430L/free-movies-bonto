@@ -12,6 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="icon" href="/assets/logo.svg" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/player.css" />
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -50,7 +51,7 @@
           <p class="hero-overview">Curated discovery, poster shelves, and cinematic detail views are on the way.</p>
           <div class="hero-meta"></div>
           <div class="hero-actions">
-            <button id="heroPlay" class="primary-button" disabled>Watch Trailer</button>
+            <button id="heroPlay" class="primary-button" disabled>Watch Now</button>
             <button id="heroDetails" class="secondary-button" disabled>More Info</button>
             <button id="heroList" class="ghost-button" disabled>Add to My List</button>
           </div>
@@ -134,6 +135,8 @@
     </section>
   </template>
 
+  <script src="/vendor/hls.min.js"></script>
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/player.js"></script>
 </body>
 </html>
