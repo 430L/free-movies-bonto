@@ -11,7 +11,7 @@
     "node": "20.x"
   },
   "dependencies": {
-    "@cinepro/core": "github:cinepro-org/core#main",
+    "@cinepro/core": "github:cinepro-org/core#98ba005f75d2675877774f5a676b3bc1c4150c27",
     "tsx": "^4.19.1"
   }
 }

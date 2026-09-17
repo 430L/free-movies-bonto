@@ -39,7 +39,7 @@ Bonto detects `package.json`, runs `npm install`, runs the `start` script, and i
 
 ## Why this is structured as a launcher
 
-The upstream CinePro repository's normal `start` command compiles TypeScript into `dist/` before launching. Bonto automatically restarts Node apps when project files change, so writing `dist/` during startup can produce a build/restart loop. This edition installs upstream CinePro Core as a dependency and starts its source directly, so startup does not modify watched project files.
+The upstream CinePro repository's normal `start` command compiles TypeScript into `dist/` before launching. Bonto automatically restarts Node apps when project files change, so writing `dist/` during startup can produce a build/restart loop. This edition installs the pinned upstream CinePro Core commit `98ba005f75d2675877774f5a676b3bc1c4150c27` as a dependency and starts its source directly, so startup does not modify watched project files. The ZIP is intentionally a deployment wrapper rather than a vendored copy of every upstream source file.
 
 The upstream package is intentionally kept separate so provider updates can continue coming from `cinepro-org/core` without maintaining a second copy of every provider.
 
