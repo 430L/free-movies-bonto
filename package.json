@@ -1,17 +1,14 @@
 {
-  "name": "cinepro-core-bonto",
-  "version": "1.0.0",
+  "name": "paysons-movies",
+  "version": "1.1.0",
   "private": true,
+  "description": "Payson’s Movies - a cinematic glass movie discovery UI with a zero-dependency Node backend.",
   "type": "module",
-  "description": "Zero-config Bonto launcher for CinePro Core. Only TMDB_API_KEY is required.",
-  "scripts": {
-    "start": "node bonto-start.mjs"
-  },
   "engines": {
-    "node": "20.x"
+    "node": ">=20"
   },
-  "dependencies": {
-    "@cinepro/core": "github:cinepro-org/core#98ba005f75d2675877774f5a676b3bc1c4150c27",
-    "tsx": "^4.19.1"
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js"
   }
 }
