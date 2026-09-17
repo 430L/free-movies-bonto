@@ -1,72 +1,64 @@
 # Bonto setup
 
-Payson’s Movies is configured for a simple Bonto deployment.
+Payson’s Movies is designed to run the custom frontend and the original CinePro Core backend inside one Bonto app.
 
-## Required secret
+## Required
+
+Set one environment variable:
 
 ```env
 TMDB_API_KEY=your_tmdb_v3_api_key_here
 ```
 
-## Optional direct playback catalog
-
-Direct HLS/MP4 playback uses media sources that you own, host, or are authorized to stream. You can supply them in either of two ways:
-
-1. Commit a `playback-sources.json` file based on `playback-sources.example.json` **if the URLs are safe to keep in the repository**.
-2. Put the same JSON in a Bonto environment variable named `PLAYBACK_SOURCES_JSON` if the URLs should stay private.
-
-The only required credential remains `TMDB_API_KEY`; playback source configuration is optional.
-
-## Do not manually set
-
-- `PORT`
-- `HOST`
-- Redis variables
-- Docker settings
-- build output paths
-
-Bonto supplies `PORT`, and the server automatically binds to `0.0.0.0`.
-
-## Start command
-
-Use the repository default:
+Then deploy the repository normally. Bonto installs the npm dependencies and runs:
 
 ```bash
 npm start
 ```
 
-Bonto should run dependency installation before startup. The only npm runtime dependency is `hls.js`, served locally to the browser at `/vendor/hls.min.js`.
+## What starts
+
+`start.mjs` launches the playback engine on a private `127.0.0.1` port and then starts the Payson’s Movies public server on Bonto’s assigned `PORT`.
+
+Do not manually set the public `PORT` or `HOST`.
 
 ## Health check
 
-After deployment, open:
+Open:
 
 ```text
 https://YOUR-BONTO-DOMAIN/api/health
 ```
 
-A correctly configured deployment returns JSON similar to:
+A healthy deployment should report:
 
 ```json
 {
   "ok": true,
   "name": "Payson’s Movies",
-  "configured": true,
-  "playbackConfigured": true,
-  "version": "1.2.0"
+  "tmdb": "configured",
+  "playback": "operational"
 }
 ```
 
-`playbackConfigured` is `false` when no direct media catalog has been supplied; discovery, metadata, trailers, and TMDB watch-provider links still work in that state.
+The `providers` count confirms that the playback backend discovered providers.
 
-## Performance behavior
+## Optional backend configuration
 
-For every configured title/episode, Payson’s Movies:
+These are not required for the normal Bonto configuration, but remain supported:
 
-- probes registered servers with a short timeout,
-- ranks online servers ahead of offline servers,
-- factors server latency and recent failures into ranking,
-- remembers real browser startup latency,
-- selects the best server automatically,
-- rotates to another healthy server after fatal playback errors,
-- lets the viewer override server, quality, audio, subtitles, and playback speed.
+```env
+CACHE_TYPE=memory
+STREMIO_ADDON=false
+MCP_ENABLED=false
+CORS_ORIGIN=*
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+```
+
+Use Redis only if you intentionally configure an external Redis service.
+
+## Troubleshooting
+
+If metadata works but Watch Now does not, check `/api/health`. If `playback` is `down`, inspect the Bonto console for lines prefixed with `[Payson playback]`. The public site can remain online even if the child playback process is restarting.
