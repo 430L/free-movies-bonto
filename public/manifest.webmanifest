@@ -1,0 +1,17 @@
+{
+  "name": "Payson’s Movies",
+  "short_name": "Payson’s Movies",
+  "description": "A cinematic movie discovery experience.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05060b",
+  "theme_color": "#0a0d16",
+  "icons": [
+    {
+      "src": "/assets/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
