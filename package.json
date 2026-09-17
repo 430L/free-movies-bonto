@@ -1,6 +1,6 @@
 {
   "name": "paysons-movies",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Payson’s Movies - custom cinematic UI powered by the original CinePro Core playback engine.",
   "type": "module",
@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node start.mjs",
-    "check": "node --check start.mjs && node --check server.js && node --check public/app.js && node --check public/player.js"
+    "check": "node --check start.mjs && node --check server.js && node --check public/app.js && node --check public/player.js && node --check public/episode-browser.js && node --check public/sw.js && node --check tests/integration.test.mjs",
+    "test": "node --test tests/integration.test.mjs"
   },
   "dependencies": {
     "@cinepro/core": "github:cinepro-org/core#98ba005f75d2675877774f5a676b3bc1c4150c27",

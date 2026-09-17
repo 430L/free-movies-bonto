@@ -13,12 +13,15 @@ loadLocalEnv();
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_BASE = String(process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3').replace(/\/$/, '');
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const ENGINE_URL = process.env.PAYSONS_ENGINE_URL || 'http://127.0.0.1:3999';
 const CACHE_TTL = 10 * 60 * 1000;
 const TMDB_TIMEOUT = 12000;
-const ENGINE_TIMEOUT = 45000;
+const ENGINE_TIMEOUT = Number(process.env.PLAYBACK_RESOLVE_TIMEOUT_MS || 65000);
+const SOURCE_PROBE_TIMEOUT = Number(process.env.PLAYBACK_PROBE_TIMEOUT_MS || 2200);
+const SOURCE_PROBE_LIMIT = Number(process.env.PLAYBACK_PROBE_LIMIT || 6);
+const SOURCE_PROBES_ENABLED = process.env.PLAYBACK_PROBE_SOURCES !== 'false';
 const cache = new Map();
 
 const MIME = new Map([
@@ -273,15 +276,21 @@ async function titleResponse(mediaType, id) {
 function requestOrigin(req) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
-  const proto = forwarded || (req.socket.encrypted ? 'https' : local ? 'http' : 'https');
+  const forwardedHeader = String(req.headers.forwarded || '');
+  const forwardedMatch = forwardedHeader.match(/(?:^|[;,]\s*)proto=(?:"?)(https?)(?:"?)(?:[;,]|$)/i);
+  const forwardedPort = String(req.headers['x-forwarded-port'] || '').split(',')[0].trim();
+  const proto = forwarded || forwardedMatch?.[1] || (forwardedPort === '443' ? 'https' : req.socket.encrypted ? 'https' : 'http');
   return host ? `${proto}://${host}` : '';
 }
 
 function rewriteInternalUrl(value, origin) {
   if (typeof value !== 'string') return value;
-  if (!origin) return value;
-  return value.split(ENGINE_URL).join(origin);
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (!origin) return trimmed;
+  if (trimmed.startsWith(ENGINE_URL)) return `${origin}${trimmed.slice(ENGINE_URL.length)}`;
+  if (trimmed.startsWith('/v1/') || trimmed === '/v1') return `${origin}${trimmed}`;
+  return trimmed;
 }
 
 function rewritePayload(value, origin) {
@@ -297,28 +306,56 @@ function rewritePayload(value, origin) {
 function sourceQualityScore(quality) {
   const text = String(quality || '').toLowerCase();
   if (text.includes('4k') || text.includes('2160')) return 2160;
+  if (text.includes('uhd')) return 2160;
+  if (text.includes('fhd') || text.includes('full hd')) return 1080;
+  if (text === 'hd' || text.includes('720')) return 720;
+  if (text.includes('sd') || text.includes('480')) return 480;
   const match = text.match(/(\d{3,4})p?/);
   return match ? Number(match[1]) : 0;
 }
 
 function sourceTypeScore(type) {
   const normalized = String(type || '').toLowerCase();
-  if (normalized === 'hls') return 40;
-  if (normalized === 'dash') return 30;
-  if (normalized === 'mp4') return 20;
+  if (['hls', 'm3u8', 'application/vnd.apple.mpegurl', 'application/x-mpegurl'].includes(normalized)) return 40;
+  if (['dash', 'mpd', 'application/dash+xml'].includes(normalized)) return 30;
+  if (['mp4', 'video/mp4'].includes(normalized)) return 20;
   return 0;
+}
+
+function normalizeSourceType(type, url) {
+  const normalized = String(type || '').toLowerCase();
+  if (['hls', 'm3u8', 'application/vnd.apple.mpegurl', 'application/x-mpegurl'].includes(normalized)) return 'hls';
+  if (['dash', 'mpd', 'application/dash+xml'].includes(normalized)) return 'dash';
+  if (['mp4', 'video/mp4'].includes(normalized)) return 'mp4';
+  const text = String(url || '').toLowerCase();
+  if (text.includes('.m3u8')) return 'hls';
+  if (text.includes('.mpd')) return 'dash';
+  if (text.includes('.mp4')) return 'mp4';
+  return normalized || 'unknown';
+}
+
+function normalizeSubtitle(subtitle, origin) {
+  if (!subtitle || typeof subtitle !== 'object' || !subtitle.url) return null;
+  return {
+    ...subtitle,
+    url: rewriteInternalUrl(subtitle.url, origin),
+    label: subtitle.label || subtitle.language || 'Subtitle',
+    language: subtitle.language || subtitle.lang || 'und',
+    format: subtitle.format || ''
+  };
 }
 
 function normalizePlaybackResponse(raw, origin) {
   const data = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
-  const globalSubtitles = Array.isArray(data?.subtitles) ? data.subtitles : [];
+  const globalSubtitles = (Array.isArray(data?.subtitles) ? data.subtitles : []).map((subtitle) => normalizeSubtitle(subtitle, origin)).filter(Boolean);
   const allSources = Array.isArray(data?.sources) ? data.sources : [];
   const streamable = allSources.filter((source) => source && source.streamable !== false && source.url);
 
   const sources = streamable.map((source, index) => {
     const provider = source.provider || {};
     const quality = source.quality || 'Auto';
-    const type = source.type || (String(source.url).includes('.m3u8') ? 'hls' : String(source.url).includes('.mpd') ? 'dash' : 'mp4');
+    const type = normalizeSourceType(source.type, source.url);
+    const sourceSubtitles = (Array.isArray(source.subtitles) ? source.subtitles : globalSubtitles).map((subtitle) => normalizeSubtitle(subtitle, origin)).filter(Boolean);
     return {
       id: source.id || `${provider.id || 'provider'}-${index}`,
       url: rewriteInternalUrl(source.url, origin),
@@ -330,16 +367,17 @@ function normalizePlaybackResponse(raw, origin) {
         name: provider.name || `Server ${index + 1}`
       },
       audioTracks: Array.isArray(source.audioTracks) ? source.audioTracks : [],
-      subtitles: Array.isArray(source.subtitles) ? source.subtitles : globalSubtitles,
+      subtitles: sourceSubtitles,
       score: sourceQualityScore(quality) + sourceTypeScore(type)
     };
   }).sort((a, b) => b.score - a.score);
 
   return {
-    id: data?.id || raw?.id || null,
+    id: data?.responseId || raw?.responseId || data?.id || raw?.id || null,
+    responseId: data?.responseId || raw?.responseId || data?.id || raw?.id || null,
     expiresAt: data?.expiresAt || raw?.expiresAt || null,
     sources,
-    subtitles: globalSubtitles.map((subtitle) => ({ ...subtitle, url: rewriteInternalUrl(subtitle.url, origin) })),
+    subtitles: globalSubtitles,
     diagnostics: data?.diagnostics || [],
     providerCount: new Set(sources.map((source) => source.provider.id)).size,
     sourceCount: sources.length
@@ -376,8 +414,8 @@ async function playbackResolve(req, url) {
 }
 
 async function annotateSourceHealth(sources, origin) {
-  if (!sources.length) return sources;
-  const limit = Math.min(sources.length, 8);
+  if (!sources.length || !SOURCE_PROBES_ENABLED || SOURCE_PROBE_LIMIT <= 0) return sources;
+  const limit = Math.min(sources.length, Math.max(0, SOURCE_PROBE_LIMIT));
   const probeResults = await Promise.all(sources.slice(0, limit).map((source) => probeSource(source, origin)));
   const result = sources.map((source, index) => index < limit ? { ...source, health: probeResults[index] } : source);
   return result.sort((a, b) => {
@@ -393,12 +431,13 @@ async function probeSource(source, origin) {
   const started = Date.now();
   let probeUrl = source.url;
   if (origin && probeUrl.startsWith(`${origin}/v1/`)) probeUrl = `${ENGINE_URL}${probeUrl.slice(origin.length)}`;
+  else if (probeUrl.startsWith('/v1/')) probeUrl = `${ENGINE_URL}${probeUrl}`;
   try {
     const response = await fetchWithTimeout(probeUrl, {
       method: 'GET',
       redirect: 'follow',
       headers: { Range: 'bytes=0-1', Accept: '*/*' }
-    }, 1800);
+    }, SOURCE_PROBE_TIMEOUT);
     try { await response.body?.cancel(); } catch {}
     return { online: response.status >= 200 && response.status < 400, latencyMs: Date.now() - started, status: response.status };
   } catch {
@@ -408,15 +447,52 @@ async function probeSource(source, origin) {
 
 async function engineHealth() {
   try {
-    const home = await engineJson('/v1', { headers: { Accept: 'application/json' } });
+    let home;
+    try {
+      home = await engineJson('/v1/health', { headers: { Accept: 'application/json' } });
+    } catch (error) {
+      if (![404, 405].includes(Number(error.status))) throw error;
+      home = await engineJson('/v1', { headers: { Accept: 'application/json' } });
+    }
+
+    const providers = normalizeHealthProviders(home);
     return {
       status: home?.status || 'operational',
       spec: home?.spec || 'omss',
-      providers: Array.isArray(home?.providers) ? home.providers.map((provider) => ({ id: provider.id, name: provider.name, capabilities: provider.capabilities || [] })) : []
+      providers,
+      providerCount: providerCountFromHealth(home, providers)
     };
   } catch (error) {
-    return { status: 'down', spec: 'omss', providers: [], error: error.message };
+    return { status: 'down', spec: 'omss', providers: [], providerCount: 0, error: error.message };
   }
+}
+
+function normalizeHealthProviders(home) {
+  if (Array.isArray(home?.providers)) {
+    return home.providers.map((provider, index) => ({
+      id: provider?.id || `provider-${index + 1}`,
+      name: provider?.name || provider?.id || `Provider ${index + 1}`,
+      capabilities: provider?.capabilities || []
+    }));
+  }
+
+  const note = String(home?.note || '');
+  const match = note.match(/Supported Providers:\s*(.+)$/i);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name, index) => ({ id: `provider-${index + 1}`, name, capabilities: [] }));
+}
+
+function providerCountFromHealth(home, providers) {
+  if (providers.length) return providers.length;
+  if (Number.isFinite(Number(home?.providers?.enabled))) return Number(home.providers.enabled);
+  if (Number.isFinite(Number(home?.providers?.total))) return Number(home.providers.total);
+  const note = String(home?.note || '');
+  const match = note.match(/Running with\s+(\d+)\s+provider/i);
+  return match ? Number(match[1]) : 0;
 }
 
 async function readJsonBody(req, limit = 64 * 1024) {
@@ -447,10 +523,10 @@ async function handleApi(req, res, url) {
     json(res, 200, {
       ok: Boolean(TMDB_API_KEY) && playback.status === 'operational',
       name: 'Payson’s Movies',
-      version: '1.3.0',
+      version: '1.4.0',
       tmdb: TMDB_API_KEY ? 'configured' : 'missing',
       playback: playback.status,
-      providers: playback.providers.length
+      providers: playback.providerCount
     }, { 'Cache-Control': 'no-store' });
     return;
   }
@@ -502,7 +578,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/playback/providers') {
     const health = await engineHealth();
-    json(res, health.status === 'down' ? 503 : 200, { status: health.status, providers: health.providers, count: health.providers.length }, { 'Cache-Control': 'no-store' });
+    json(res, health.status === 'down' ? 503 : 200, { status: health.status, providers: health.providers, count: health.providerCount }, { 'Cache-Control': 'no-store' });
     return;
   }
 
@@ -521,7 +597,13 @@ async function handleApi(req, res, url) {
         error.status = 400;
         throw error;
       }
-      const result = await engineJson(`/v1/refresh/${encodeURIComponent(id)}`, { method: 'POST' });
+      let result;
+      try {
+        result = await engineJson(`/v1/refresh/${encodeURIComponent(id)}`, { method: 'GET' });
+      } catch (error) {
+        if (![404, 405].includes(Number(error.status))) throw error;
+        result = await engineJson(`/v1/refresh/${encodeURIComponent(id)}`, { method: 'POST' });
+      }
       json(res, 200, result, { 'Cache-Control': 'no-store' });
     } catch (error) { apiError(res, error, 'Playback refresh failed'); }
     return;
@@ -536,12 +618,13 @@ async function proxyEngine(req, res, url) {
   const target = new URL(`${ENGINE_URL}${url.pathname}${url.search}`);
   const headers = { ...req.headers, host: target.host };
   delete headers['content-length'];
+  headers['accept-encoding'] = 'identity';
 
   const upstream = http.request(target, { method: req.method, headers }, (upstreamRes) => {
     const origin = requestOrigin(req);
     const contentType = String(upstreamRes.headers['content-type'] || '').toLowerCase();
     const isJson = contentType.includes('application/json');
-    const isManifest = contentType.includes('mpegurl') || contentType.includes('m3u8');
+    const isManifest = contentType.includes('mpegurl') || contentType.includes('m3u8') || contentType.includes('dash+xml');
 
     if (isJson || isManifest) {
       const chunks = [];
@@ -567,6 +650,7 @@ async function proxyEngine(req, res, url) {
         const responseHeaders = { ...upstreamRes.headers };
         for (const name of hopByHopHeaders) delete responseHeaders[name];
         delete responseHeaders['content-length'];
+        delete responseHeaders['content-encoding'];
         responseHeaders['Content-Length'] = Buffer.byteLength(body);
         responseHeaders['Cache-Control'] = 'no-store';
         res.writeHead(upstreamRes.statusCode || 502, { ...baseSecurityHeaders, ...responseHeaders });
@@ -585,6 +669,10 @@ async function proxyEngine(req, res, url) {
   upstream.on('error', (error) => {
     if (!res.headersSent) json(res, 502, { error: 'Playback backend unavailable', detail: error.message }, { 'Cache-Control': 'no-store' });
     else res.destroy(error);
+  });
+
+  res.on('close', () => {
+    if (!upstream.destroyed) upstream.destroy();
   });
 
   req.pipe(upstream);

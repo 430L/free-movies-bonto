@@ -8,7 +8,10 @@
     selectedSeason: 1,
     selectedEpisode: 1,
     fallbackImage: '',
-    hooked: false
+    hooked: false,
+    titleRequestSequence: 0,
+    seasonRequestSequence: 0,
+    resolveRequestSequence: 0
   };
 
   const originalFetch = window.fetch.bind(window);
@@ -18,11 +21,16 @@
     const seasonMatch = requestUrl.match(/\/api\/tv\/(\d+)\/season\/(\d+)(?:\?|$)/);
     const titleMatch = requestUrl.match(/\/api\/title\/tv\/(\d+)(?:\?|$)/);
     const resolveMatch = requestUrl.match(/\/api\/playback\/resolve\?(.+)$/);
+    const titleRequestToken = titleMatch ? ++state.titleRequestSequence : 0;
+    const seasonRequestToken = seasonMatch ? ++state.seasonRequestSequence : 0;
+    const resolveRequestToken = resolveMatch ? ++state.resolveRequestSequence : 0;
 
     if (resolveMatch) {
       const params = new URLSearchParams(resolveMatch[1]);
       if (params.get('type') === 'tv') {
-        state.showId = params.get('id') || state.showId;
+        const nextShowId = params.get('id') || state.showId;
+        if (nextShowId && nextShowId !== state.showId) resetShowState(nextShowId);
+        state.showId = nextShowId;
         state.selectedSeason = Number(params.get('season') || state.selectedSeason || 1);
         state.selectedEpisode = Number(params.get('episode') || state.selectedEpisode || 1);
         syncSelection();
@@ -30,29 +38,58 @@
       }
     }
 
-    const response = await originalFetch(...args);
+    let response;
+    try {
+      response = await originalFetch(...args);
+    } catch (error) {
+      if (resolveMatch && resolveRequestToken === state.resolveRequestSequence) clearResolveStatusHints();
+      throw error;
+    }
 
     if (titleMatch && response.ok) {
       void response.clone().json().then((data) => {
-        state.showId = titleMatch[1];
+        if (titleRequestToken !== state.titleRequestSequence) return;
+        const nextShowId = titleMatch[1];
+        if (nextShowId !== state.showId) resetShowState(nextShowId);
+        state.showId = nextShowId;
         state.seasons = (data.seasons || []).filter((season) => season.season_number > 0);
         state.fallbackImage = data.backdrop_url || data.poster_url || '';
+        if (!state.seasons.some((season) => season.season_number === state.selectedSeason)) {
+          state.selectedSeason = state.seasons[0]?.season_number || 1;
+          state.selectedEpisode = 1;
+        }
         renderSeasonTabs();
+        renderBrowser();
       }).catch(() => {});
     }
 
     if (seasonMatch && response.ok) {
       void response.clone().json().then((data) => {
-        state.showId = seasonMatch[1];
-        state.selectedSeason = Number(seasonMatch[2]);
-        state.seasonData.set(state.selectedSeason, data);
+        if (seasonRequestToken !== state.seasonRequestSequence) return;
+        const responseShowId = seasonMatch[1];
+        if (state.showId && responseShowId !== state.showId) return;
+        state.showId = responseShowId;
+        const responseSeason = Number(seasonMatch[2]);
+        state.seasonData.set(responseSeason, data);
+        if (responseSeason === Number(document.getElementById('paysonSeasonSelect')?.value || state.selectedSeason)) {
+          state.selectedSeason = responseSeason;
+        }
         renderBrowser();
       }).catch(() => {});
     }
 
-    if (resolveMatch) clearResolveStatusHints();
+    if (resolveMatch && resolveRequestToken === state.resolveRequestSequence) clearResolveStatusHints();
     return response;
   };
+
+  function resetShowState(showId = '') {
+    state.showId = showId;
+    state.seasons = [];
+    state.seasonData.clear();
+    state.selectedSeason = 1;
+    state.selectedEpisode = 1;
+    state.fallbackImage = '';
+  }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

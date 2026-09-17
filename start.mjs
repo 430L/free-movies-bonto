@@ -108,10 +108,12 @@ function startCore() {
 async function waitForCore(timeoutMs = 45000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(`${engineUrl}/v1`, { signal: AbortSignal.timeout(2000) });
-      if (response.ok) return true;
-    } catch {}
+    for (const pathname of ['/v1/health', '/v1']) {
+      try {
+        const response = await fetch(`${engineUrl}${pathname}`, { signal: AbortSignal.timeout(2000) });
+        if (response.ok) return true;
+      } catch {}
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   return false;

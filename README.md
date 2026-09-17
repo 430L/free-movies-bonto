@@ -28,8 +28,11 @@ CinePro Core runs on a private loopback port. The public Bonto port is owned by 
 - CinePro Core provider discovery and OMSS movie/TV source resolution
 - all streamable sources returned by the backend remain available in the server picker
 - automatic source ranking using quality plus measured startup latency and recent reliability
-- automatic failover when a source fails
+- automatic failover without retry loops when a source fails
 - one automatic source-list refresh after every current source fails
+- stale-request protection when rapidly switching titles, seasons, or episodes
+- same-origin rewriting for streams, manifests, and subtitle URLs
+- byte-range passthrough for seekable streams
 - manual server selection
 - HLS.js playback plus native-HLS fallback
 - direct browser-supported video playback
@@ -73,6 +76,10 @@ CORS_ORIGIN=*
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
+PLAYBACK_RESOLVE_TIMEOUT_MS=65000
+PLAYBACK_PROBE_TIMEOUT_MS=2200
+PLAYBACK_PROBE_LIMIT=6
+PLAYBACK_PROBE_SOURCES=true
 ```
 
 Memory cache is used by default, so Redis is not required.
@@ -99,7 +106,10 @@ The underlying OMSS interface is also proxied on the same origin under `/v1/*`. 
 
 ```bash
 npm run check
+npm test
 ```
+
+The integration test runs the public server against local mock TMDB and CinePro/OMSS backends. It verifies movie playback resolution, TV episode resolution, provider health parsing, `responseId` refresh behavior, same-origin manifest/subtitle rewriting, and HTTP byte-range passthrough without contacting external streaming providers.
 
 ## Third-party software
 

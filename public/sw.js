@@ -1,4 +1,4 @@
-const CACHE = 'paysons-movies-shell-v4';
+const CACHE = 'paysons-movies-shell-v5';
 const SHELL = [
   '/',
   '/styles.css',

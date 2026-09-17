@@ -75,7 +75,7 @@ async function init() {
 function attachEvents() {
   elements.heroPlay.addEventListener('click', async () => {
     const featured = getFeatured();
-    if (featured) await playTrailerFor(featured.media_type, featured.id);
+    if (featured) requestPlayback(featured);
   });
 
   elements.heroDetails.addEventListener('click', async () => {
@@ -255,6 +255,9 @@ function renderFeatured() {
   elements.heroDetails.disabled = false;
   elements.heroList.disabled = false;
   elements.heroList.textContent = isInWatchlist(item.id, item.media_type) ? 'Remove from My List' : 'Add to My List';
+  elements.heroPlay.dataset.mediaType = item.media_type;
+  elements.heroPlay.dataset.itemId = String(item.id);
+  elements.heroPlay.dataset.title = item.title || '';
 
   elements.heroDots.innerHTML = state.featuredItems.map((_, index) => `
     <button
@@ -362,7 +365,8 @@ function createPosterCard(item, dense = false) {
 
   card.innerHTML = `
     <div class="poster-overlay-actions">
-      <button class="icon-button" type="button" title="Watch trailer" data-open-trailer="true" data-media-type="${item.media_type}" data-item-id="${item.id}">▶</button>
+      <button class="icon-button" type="button" title="Watch now" data-payson-playback="true" data-media-type="${item.media_type}" data-item-id="${item.id}" data-title="${escapeAttribute(item.title)}">▶</button>
+      <button class="icon-button payson-trailer-button" type="button" title="Trailer" data-payson-trailer="true" data-media-type="${item.media_type}" data-item-id="${item.id}">T</button>
       <button class="icon-button" type="button" title="${saved ? 'Remove from My List' : 'Add to My List'}" data-toggle-watchlist="true" ${datasetAttributes(item)}>${saved ? '✓' : '+'}</button>
     </div>
     <div class="poster-image-wrap">
@@ -383,7 +387,10 @@ async function openDetails(mediaType, id) {
     const details = await getDetails(mediaType, id);
     rememberViewed(details);
 
-    const creators = details.crew?.map((member) => member.name).join(', ') || 'Not listed';
+    const creators = [...new Set([
+      ...(details.created_by || []).map((member) => member.name),
+      ...(details.crew || []).map((member) => member.name)
+    ].filter(Boolean))].join(', ') || 'Not listed';
     const genres = (details.genres || []).map((genre) => genre.name).join(', ') || 'Uncategorized';
     const seasons = details.number_of_seasons ? `${details.number_of_seasons} season${details.number_of_seasons === 1 ? '' : 's'}` : null;
     const runtime = details.runtime ? `${details.runtime} min` : seasons;
@@ -406,7 +413,8 @@ async function openDetails(mediaType, id) {
           </div>
           <p class="detail-overview">${escapeHtml(details.overview || 'No overview available yet.')}</p>
           <div class="detail-actions">
-            <button class="primary-button" ${details.trailer ? `data-open-trailer="true" data-media-type="${details.media_type}" data-item-id="${details.id}"` : 'disabled'}>${details.trailer ? 'Watch Trailer' : 'No Trailer Available'}</button>
+            <button class="primary-button" data-payson-detail-watch="true" data-media-type="${details.media_type}" data-item-id="${details.id}" data-title="${escapeAttribute(details.display_title)}">Watch Now</button>
+            <button class="secondary-button" ${details.trailer ? `data-payson-trailer="true" data-media-type="${details.media_type}" data-item-id="${details.id}"` : 'disabled'}>${details.trailer ? 'Trailer' : 'No Trailer Available'}</button>
             <button class="secondary-button detail-watchlist-button" data-toggle-watchlist="true" ${datasetAttributes({
               id: details.id,
               media_type: details.media_type,
@@ -462,6 +470,16 @@ async function openDetails(mediaType, id) {
   } catch (error) {
     showToast(error.message);
   }
+}
+
+function requestPlayback(item) {
+  window.dispatchEvent(new CustomEvent('payson:play', {
+    detail: {
+      type: item.media_type,
+      id: String(item.id),
+      title: item.title || item.display_title || ''
+    }
+  }));
 }
 
 function recommendationCardMarkup(item) {
