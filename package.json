@@ -1,17 +1,19 @@
 {
   "name": "paysons-movies",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
-  "description": "Payson’s Movies - cinematic movie discovery and authorized multi-source playback.",
+  "description": "Payson’s Movies - custom cinematic UI powered by the original CinePro Core playback engine.",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/player.js"
+    "start": "node start.mjs",
+    "check": "node --check start.mjs && node --check server.js && node --check public/app.js && node --check public/player.js"
   },
   "dependencies": {
-    "hls.js": "^1.6.15"
+    "@cinepro/core": "github:cinepro-org/core#98ba005f75d2675877774f5a676b3bc1c4150c27",
+    "hls.js": "^1.6.15",
+    "tsx": "^4.19.1"
   }
 }
