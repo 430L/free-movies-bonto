@@ -1,5 +1,5 @@
-const PLAYER_PROGRESS_KEY = 'paysons-movies-playback-progress';
 const PLAYER_SETTINGS_KEY = 'paysons-movies-playback-settings';
+const PLAYER_PROGRESS_KEY = 'paysons-movies-playback-progress';
 const PLAYER_METRICS_KEY = 'paysons-movies-source-metrics';
 
 const playerState = {
@@ -8,12 +8,20 @@ const playerState = {
   episode: 1,
   episodes: [],
   sources: [],
+  responseId: null,
   sourceIndex: -1,
   hls: null,
+  refreshAttempted: false,
+  failoverLock: false,
   loadStartedAt: 0,
   lastProgressWrite: 0,
-  failoverLock: false,
-  settings: loadJson(PLAYER_SETTINGS_KEY, { autoServer: true, autoplay: true, preferredQuality: 'auto', playbackRate: 1 }),
+  settings: loadJson(PLAYER_SETTINGS_KEY, {
+    autoServer: true,
+    autoplay: true,
+    preferredQuality: 'Auto',
+    playbackRate: 1,
+    preferredProvider: ''
+  }),
   progress: loadJson(PLAYER_PROGRESS_KEY, {}),
   metrics: loadJson(PLAYER_METRICS_KEY, {})
 };
@@ -31,14 +39,13 @@ function setupPlayer() {
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      mutation.addedNodes.forEach((node) => {
+      for (const node of mutation.addedNodes) {
         if (node.nodeType === Node.ELEMENT_NODE) enhancePlaybackButtons(node);
-      });
+      }
     }
   });
   observer.observe(document.body, { childList: true, subtree: true });
-
-  document.addEventListener('click', interceptAppPlaybackClicks, true);
+  document.addEventListener('click', interceptPlaybackClicks, true);
 }
 
 function injectPlayerShell() {
@@ -64,7 +71,7 @@ function injectPlayerShell() {
 
       <div class="payson-video-stage">
         <video id="paysonVideo" controls playsinline preload="metadata"></video>
-        <div id="paysonPlayerStatus" class="payson-player-status">Resolving the best available server…</div>
+        <div id="paysonPlayerStatus" class="payson-player-status">Finding the best available server…</div>
       </div>
 
       <div class="payson-player-toolbar">
@@ -87,7 +94,11 @@ function injectPlayerShell() {
         <label class="payson-control">
           <span>Speed</span>
           <select id="paysonSpeedSelect">
-            <option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1">1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
           </select>
         </label>
         <label class="payson-toggle"><input id="paysonAutoServer" type="checkbox" /> <span>Auto fastest server</span></label>
@@ -136,53 +147,64 @@ function cacheUi() {
 function wirePlayerEvents() {
   ui.close.addEventListener('click', closePlayer);
   ui.root.querySelector('.payson-player-backdrop').addEventListener('click', closePlayer);
+
   ui.server.addEventListener('change', () => {
     playerState.settings.autoServer = false;
+    playerState.settings.preferredProvider = playerState.sources[Number(ui.server.value)]?.provider?.id || '';
     ui.autoServer.checked = false;
     saveSettings();
-    loadSource(Number(ui.server.value), { manual: true });
+    void loadSource(Number(ui.server.value), { manual: true });
   });
+
   ui.autoServer.addEventListener('change', () => {
     playerState.settings.autoServer = ui.autoServer.checked;
     saveSettings();
-    if (ui.autoServer.checked && playerState.sources.length) loadSource(bestSourceIndex(), { manual: false });
+    if (ui.autoServer.checked && playerState.sources.length) void loadSource(bestSourceIndex(), { manual: false });
   });
+
   ui.quality.addEventListener('change', () => {
     const level = Number(ui.quality.value);
     playerState.settings.preferredQuality = ui.quality.options[ui.quality.selectedIndex]?.textContent || 'Auto';
     saveSettings();
     if (playerState.hls) playerState.hls.currentLevel = level;
   });
+
   ui.audio.addEventListener('change', () => {
-    if (playerState.hls) playerState.hls.audioTrack = Number(ui.audio.value);
+    if (playerState.hls && ui.audio.value !== '') playerState.hls.audioTrack = Number(ui.audio.value);
   });
+
   ui.subtitle.addEventListener('change', applySubtitleSelection);
+
   ui.speed.addEventListener('change', () => {
     ui.video.playbackRate = Number(ui.speed.value);
     playerState.settings.playbackRate = ui.video.playbackRate;
     saveSettings();
   });
+
   ui.season.addEventListener('change', async () => {
     playerState.season = Number(ui.season.value);
     playerState.episode = 1;
     await loadSeasonAndResolve();
   });
+
   ui.episode.addEventListener('change', async () => {
     playerState.episode = Number(ui.episode.value);
     await resolveAndPlay();
   });
+
   ui.prevEpisode.addEventListener('click', () => stepEpisode(-1));
   ui.nextEpisode.addEventListener('click', () => stepEpisode(1));
   ui.video.addEventListener('loadedmetadata', restoreProgress);
   ui.video.addEventListener('timeupdate', persistProgressThrottled);
   ui.video.addEventListener('ended', handleEnded);
-  ui.video.addEventListener('error', () => handlePlaybackFailure('video-error'));
+  ui.video.addEventListener('error', () => void handlePlaybackFailure('video-error'));
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !ui.root.classList.contains('hidden')) closePlayer();
   });
 }
 
-function interceptAppPlaybackClicks(event) {
+function interceptPlaybackClicks(event) {
   const hero = event.target.closest?.('#heroPlay');
   if (hero) {
     event.preventDefault();
@@ -191,19 +213,11 @@ function interceptAppPlaybackClicks(event) {
     return;
   }
 
-  const cardWatch = event.target.closest?.('[data-payson-playback]');
-  if (cardWatch) {
+  const watch = event.target.closest?.('[data-payson-playback], [data-payson-detail-watch]');
+  if (watch) {
     event.preventDefault();
     event.stopImmediatePropagation();
-    void openPlayer({ type: cardWatch.dataset.mediaType, id: cardWatch.dataset.itemId, title: cardWatch.dataset.title || '' });
-    return;
-  }
-
-  const detailWatch = event.target.closest?.('[data-payson-detail-watch]');
-  if (detailWatch) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    void openPlayer({ type: detailWatch.dataset.mediaType, id: detailWatch.dataset.itemId, title: detailWatch.dataset.title || '' });
+    void openPlayer({ type: watch.dataset.mediaType, id: watch.dataset.itemId, title: watch.dataset.title || '' });
     return;
   }
 
@@ -217,9 +231,9 @@ function interceptAppPlaybackClicks(event) {
 
 function enhancePlaybackButtons(root) {
   const scope = root.querySelectorAll ? root : document;
-
   const heroPlay = document.getElementById('heroPlay');
   if (heroPlay) heroPlay.textContent = 'Watch Now';
+
   const heroActions = heroPlay?.closest('.hero-actions');
   if (heroActions && !document.getElementById('heroTrailer')) {
     const trailer = document.createElement('button');
@@ -227,7 +241,9 @@ function enhancePlaybackButtons(root) {
     trailer.type = 'button';
     trailer.className = 'secondary-button';
     trailer.textContent = 'Trailer';
-    trailer.addEventListener('click', async () => {
+    trailer.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
       const identity = await getHeroIdentity();
       if (identity) await openTrailerFor(identity.type, identity.id);
     });
@@ -247,6 +263,7 @@ function enhancePlaybackButtons(root) {
 
     button.dataset.paysonEnhanced = '1';
     button.dataset.paysonPlayback = '1';
+    button.dataset.title = button.closest('.poster-card')?.querySelector('.poster-title')?.textContent || '';
     button.title = 'Watch now';
     button.textContent = '▶';
     delete button.dataset.openTrailer;
@@ -265,8 +282,11 @@ function enhancePlaybackButtons(root) {
       watch.dataset.mediaType = trailer.dataset.mediaType;
       watch.dataset.itemId = trailer.dataset.itemId;
       watch.dataset.title = document.querySelector('#detailContent .detail-copy h2')?.textContent || '';
+
       trailer.className = 'secondary-button';
       trailer.textContent = 'Trailer';
+      trailer.dataset.paysonTrailer = '1';
+      delete trailer.dataset.openTrailer;
       detailActions.insertBefore(watch, trailer);
     }
   }
@@ -297,7 +317,10 @@ async function openPlayer({ type, id, title }) {
   playerState.media = { type, id: String(id), title: title || '' };
   playerState.season = 1;
   playerState.episode = 1;
+  playerState.episodes = [];
   playerState.sources = [];
+  playerState.responseId = null;
+  playerState.refreshAttempted = false;
   playerState.sourceIndex = -1;
 
   ui.root.classList.remove('hidden');
@@ -347,10 +370,11 @@ async function loadSeasonAndResolve() {
   }
 }
 
-async function resolveAndPlay() {
+async function resolveAndPlay({ refreshed = false } = {}) {
   cleanupMedia();
   setFallback('');
-  setStatus('Testing available servers…');
+  setStatus(refreshed ? 'Refreshing servers…' : 'Resolving all available servers…');
+
   const params = new URLSearchParams({ type: playerState.media.type, id: playerState.media.id });
   if (playerState.media.type === 'tv') {
     params.set('season', String(playerState.season));
@@ -363,103 +387,247 @@ async function resolveAndPlay() {
 
   try {
     const resolved = await request(`/api/playback/resolve?${params}`);
-    playerState.sources = rankWithClientMetrics(resolved.sources || []);
+    playerState.responseId = resolved.id || null;
+    playerState.sources = rankSources(resolved.sources || []);
     renderSourceOptions();
+
     if (!playerState.sources.length) {
-      setStatus('No direct playback source is configured for this title.');
-      await renderWatchFallback();
+      setStatus('No playable server was returned for this title.');
+      await renderWatchFallback(resolved.diagnostics || []);
       return;
     }
-    const preferred = playerState.settings.autoServer ? bestSourceIndex() : Math.max(0, playerState.sources.findIndex((source) => source.id === resolved.autoSelected));
-    await loadSource(preferred < 0 ? 0 : preferred, { manual: false });
+
+    const preferredIndex = preferredSourceIndex();
+    await loadSource(preferredIndex, { manual: false });
   } catch (error) {
     setStatus('Could not resolve playback.');
     setFallback(escapeHtml(error.message));
   }
 }
 
-function rankWithClientMetrics(sources) {
-  return [...sources].sort((a, b) => {
-    if (a.health?.online !== b.health?.online) return a.health?.online ? -1 : 1;
-    const aMetric = playerState.metrics[a.id]?.latencyMs;
-    const bMetric = playerState.metrics[b.id]?.latencyMs;
-    if (Number.isFinite(aMetric) && Number.isFinite(bMetric) && Math.abs(aMetric - bMetric) > 80) return aMetric - bMetric;
-    return (a.health?.latencyMs || 999999) - (b.health?.latencyMs || 999999);
-  });
+function rankSources(sources) {
+  return [...sources].sort((a, b) => sourceRank(b) - sourceRank(a));
+}
+
+function sourceRank(source) {
+  const metric = playerState.metrics[sourceMetricKey(source)] || {};
+  const serverLatency = Number.isFinite(source.health?.latencyMs) ? source.health.latencyMs : 1800;
+  const recentFailurePenalty = metric.lastFailure && Date.now() - metric.lastFailure < 30 * 60 * 1000 ? 5000 : 0;
+  const latencyPenalty = Number.isFinite(metric.latencyMs) ? metric.latencyMs : serverLatency;
+  const successBoost = Math.min(Number(metric.successes || 0), 10) * 45;
+  const providerBoost = playerState.settings.preferredProvider && source.provider?.id === playerState.settings.preferredProvider ? 700 : 0;
+  const onlinePenalty = source.health?.online === false ? 10000 : 0;
+  return Number(source.score || 0) * 5 + successBoost + providerBoost - latencyPenalty - recentFailurePenalty - onlinePenalty;
+}
+
+function preferredSourceIndex() {
+  if (playerState.settings.autoServer) return bestSourceIndex();
+  const preferred = playerState.sources.findIndex((source) => source.provider?.id === playerState.settings.preferredProvider);
+  return preferred >= 0 ? preferred : 0;
 }
 
 function bestSourceIndex() {
-  const onlineIndex = playerState.sources.findIndex((source) => source.health?.online !== false);
-  return onlineIndex >= 0 ? onlineIndex : 0;
+  let bestIndex = 0;
+  let bestRank = -Infinity;
+  playerState.sources.forEach((source, index) => {
+    const rank = sourceRank(source);
+    if (rank > bestRank) {
+      bestRank = rank;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
 }
 
 function renderSourceOptions() {
   ui.server.innerHTML = playerState.sources.map((source, index) => {
-    const latency = source.health?.latencyMs ? `${source.health.latencyMs}ms` : 'untested';
+    const metric = playerState.metrics[sourceMetricKey(source)];
+    const measured = Number.isFinite(metric?.latencyMs) ? metric.latencyMs : source.health?.latencyMs;
+    const latency = Number.isFinite(measured) ? `${measured}ms` : 'new';
     const state = source.health?.online === false ? 'offline' : 'online';
-    return `<option value="${index}">${escapeHtml(source.name)} · ${escapeHtml(source.quality)} · ${state} · ${latency}</option>`;
+    const label = `${source.provider?.name || `Server ${index + 1}`} · ${source.quality || 'Auto'} · ${state} · ${latency}`;
+    return `<option value="${index}">${escapeHtml(label)}</option>`;
   }).join('');
-  ui.summary.textContent = playerState.sources.length ? `${playerState.sources.length} server${playerState.sources.length === 1 ? '' : 's'} available. Fastest healthy server is selected automatically.` : '';
+  const providers = new Set(playerState.sources.map((source) => source.provider?.id || source.provider?.name));
+  ui.summary.textContent = `${playerState.sources.length} playable source${playerState.sources.length === 1 ? '' : 's'} across ${providers.size} server${providers.size === 1 ? '' : 's'}. Auto mode prioritizes quality, measured startup speed, and recent reliability.`;
 }
 
 async function loadSource(index, { manual = false } = {}) {
-  if (!playerState.sources[index]) return;
+  const source = playerState.sources[index];
+  if (!source) return;
+
+  const resumeAt = Number.isFinite(ui.video.currentTime) ? ui.video.currentTime : 0;
   cleanupMedia();
   playerState.sourceIndex = index;
-  const source = playerState.sources[index];
   ui.server.value = String(index);
   ui.video.playbackRate = Number(playerState.settings.playbackRate || 1);
   ui.speed.value = String(ui.video.playbackRate);
-  setStatus(`Connecting to ${source.name}…`);
-  applyExternalSubtitles(source.subtitles || []);
-  resetQualityOptions();
+  setStatus(`Connecting to ${source.provider?.name || 'server'}…`);
+  resetTrackControls();
+  await applyExternalSubtitles(source.subtitles || []);
   playerState.loadStartedAt = performance.now();
 
-  const isHls = source.type === 'hls' || source.url.includes('.m3u8');
+  const sourceType = String(source.type || '').toLowerCase();
+  const isHls = sourceType === 'hls' || String(source.url).includes('.m3u8');
+  const isDash = sourceType === 'dash' || String(source.url).includes('.mpd');
+
+  if (isDash) {
+    markFailure(source, 'dash-unsupported');
+    if (!manual) return handlePlaybackFailure('dash-unsupported');
+    setStatus('This browser player does not support this DASH source. Choose another server.');
+    return;
+  }
+
   if (isHls && window.Hls?.isSupported()) {
-    const hls = new window.Hls({ enableWorker: true, lowLatencyMode: false, capLevelToPlayerSize: true, backBufferLength: 30, maxBufferLength: 45, startLevel: -1 });
+    const hls = new window.Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      capLevelToPlayerSize: true,
+      backBufferLength: 45,
+      maxBufferLength: 60,
+      startLevel: -1,
+      manifestLoadingTimeOut: 10000,
+      levelLoadingTimeOut: 10000,
+      fragLoadingTimeOut: 15000
+    });
     playerState.hls = hls;
     hls.loadSource(source.url);
     hls.attachMedia(ui.video);
+
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
       populateHlsQuality(hls);
       populateHlsAudio(hls);
-      playbackReady(source);
+      playbackReady(source, resumeAt);
     });
-    hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => { if (Number.isInteger(data.level)) ui.quality.value = String(data.level); });
+    hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      if (Number.isInteger(data.level)) ui.quality.value = String(data.level);
+    });
     hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, () => populateHlsAudio(hls));
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
       if (!data.fatal) return;
       if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
         try { hls.recoverMediaError(); return; } catch {}
       }
-      handlePlaybackFailure(`hls-${data.type || 'fatal'}`);
+      void handlePlaybackFailure(`hls-${data.type || 'fatal'}`);
     });
-  } else {
-    ui.video.src = source.url;
-    ui.video.addEventListener('canplay', () => playbackReady(source), { once: true });
-    if (isHls && !ui.video.canPlayType('application/vnd.apple.mpegurl')) {
-      setStatus('This browser cannot play this HLS source. Trying another server…');
-      if (!manual) return handlePlaybackFailure('hls-unsupported');
-    }
-    ui.video.load();
+    return;
   }
+
+  if (isHls && ui.video.canPlayType('application/vnd.apple.mpegurl')) {
+    ui.video.src = source.url;
+    ui.video.addEventListener('canplay', () => playbackReady(source, resumeAt), { once: true });
+    ui.video.load();
+    return;
+  }
+
+  ui.video.src = source.url;
+  ui.video.addEventListener('canplay', () => playbackReady(source, resumeAt), { once: true });
+  ui.video.load();
 }
 
-function playbackReady(source) {
+function playbackReady(source, resumeAt = 0) {
   const latencyMs = Math.max(1, Math.round(performance.now() - playerState.loadStartedAt));
-  playerState.metrics[source.id] = { latencyMs, updatedAt: Date.now() };
-  localStorage.setItem(PLAYER_METRICS_KEY, JSON.stringify(playerState.metrics));
-  reportSource(source.id, 'success', latencyMs);
-  setStatus(`${source.name} connected · ${latencyMs}ms startup`);
-  restoreProgress();
+  markSuccess(source, latencyMs);
+  renderSourceOptions();
+  ui.server.value = String(playerState.sourceIndex);
+  setStatus(`${source.provider?.name || 'Server'} connected · ${latencyMs}ms startup`);
+
+  if (resumeAt > 0 && Number.isFinite(ui.video.duration) && resumeAt < ui.video.duration - 5) ui.video.currentTime = resumeAt;
+  else restoreProgress();
+
   if (playerState.settings.autoplay) ui.video.play().catch(() => {});
 }
 
+function markSuccess(source, latencyMs) {
+  const key = sourceMetricKey(source);
+  const current = playerState.metrics[key] || {};
+  playerState.metrics[key] = {
+    ...current,
+    latencyMs,
+    successes: Number(current.successes || 0) + 1,
+    lastSuccess: Date.now()
+  };
+  persistMetrics();
+}
+
+function markFailure(source, reason) {
+  if (!source) return;
+  const key = sourceMetricKey(source);
+  const current = playerState.metrics[key] || {};
+  playerState.metrics[key] = {
+    ...current,
+    failures: Number(current.failures || 0) + 1,
+    lastFailure: Date.now(),
+    lastFailureReason: reason
+  };
+  persistMetrics();
+}
+
+function sourceMetricKey(source) {
+  return source.provider?.id || source.provider?.name || source.id || source.url;
+}
+
+function persistMetrics() {
+  localStorage.setItem(PLAYER_METRICS_KEY, JSON.stringify(playerState.metrics));
+}
+
+async function handlePlaybackFailure(reason) {
+  if (playerState.failoverLock || playerState.sourceIndex < 0) return;
+  playerState.failoverLock = true;
+
+  try {
+    const current = playerState.sources[playerState.sourceIndex];
+    const resumeAt = Number.isFinite(ui.video.currentTime) ? ui.video.currentTime : 0;
+    markFailure(current, reason);
+
+    if (!playerState.settings.autoServer) {
+      setStatus(`Server failed (${reason}). Choose another server.`);
+      return;
+    }
+
+    const candidates = playerState.sources
+      .map((source, index) => ({ source, index, rank: sourceRank(source) }))
+      .filter(({ index }) => index !== playerState.sourceIndex)
+      .sort((a, b) => b.rank - a.rank);
+
+    if (candidates.length) {
+      const next = candidates[0];
+      setStatus(`${current?.provider?.name || 'Server'} failed. Switching to ${next.source.provider?.name || 'another server'}…`);
+      await loadSource(next.index, { manual: false });
+      if (resumeAt > 0) ui.video.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(ui.video.duration) && resumeAt < ui.video.duration - 5) ui.video.currentTime = resumeAt;
+      }, { once: true });
+      return;
+    }
+
+    if (!playerState.refreshAttempted && playerState.responseId) {
+      playerState.refreshAttempted = true;
+      setStatus('All current servers failed. Refreshing the server list…');
+      await request('/api/playback/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: playerState.responseId })
+      });
+      await resolveAndPlay({ refreshed: true });
+      return;
+    }
+
+    setStatus('Every returned server failed.');
+    await renderWatchFallback();
+  } catch (error) {
+    setStatus('Automatic server recovery failed.');
+    setFallback(escapeHtml(error.message));
+  } finally {
+    playerState.failoverLock = false;
+  }
+}
+
 function populateHlsQuality(hls) {
-  ui.quality.innerHTML = '<option value="-1">Auto</option>' + hls.levels.map((level, index) => `<option value="${index}">${level.height ? `${level.height}p` : `Level ${index + 1}`}</option>`).join('');
-  ui.quality.disabled = false;
-  const preference = String(playerState.settings.preferredQuality || 'auto').toLowerCase();
+  const levels = hls.levels || [];
+  ui.quality.innerHTML = '<option value="-1">Auto</option>' + levels.map((level, index) => `<option value="${index}">${level.height ? `${level.height}p` : `${Math.round((level.bitrate || 0) / 1000)} kbps`}</option>`).join('');
+  ui.quality.disabled = levels.length === 0;
+
+  const preference = String(playerState.settings.preferredQuality || 'Auto').toLowerCase();
   if (preference !== 'auto') {
     const option = [...ui.quality.options].find((entry) => entry.textContent.toLowerCase() === preference);
     if (option) {
@@ -475,33 +643,58 @@ function populateHlsAudio(hls) {
   ui.audio.disabled = tracks.length < 2;
 }
 
-function resetQualityOptions() {
+function resetTrackControls() {
   ui.quality.innerHTML = '<option value="-1">Auto</option>';
   ui.quality.disabled = true;
   ui.audio.innerHTML = '<option value="">Default</option>';
   ui.audio.disabled = true;
+  ui.subtitle.innerHTML = '<option value="off">Off</option>';
+  [...ui.video.querySelectorAll('track')].forEach((track) => track.remove());
 }
 
-function applyExternalSubtitles(subtitles) {
-  [...ui.video.querySelectorAll('track')].forEach((track) => track.remove());
+async function applyExternalSubtitles(subtitles) {
   ui.subtitle.innerHTML = '<option value="off">Off</option>';
-  subtitles.forEach((subtitle, index) => {
+  [...ui.video.querySelectorAll('track')].forEach((track) => track.remove());
+
+  for (let index = 0; index < subtitles.length; index += 1) {
+    const subtitle = subtitles[index];
+    if (!subtitle?.url) continue;
+    const label = subtitle.label || subtitle.language || `Subtitle ${index + 1}`;
+    const format = String(subtitle.format || '').toLowerCase();
+    let trackUrl = subtitle.url;
+
+    if (format === 'srt' || trackUrl.toLowerCase().endsWith('.srt')) {
+      try {
+        const response = await fetch(trackUrl);
+        if (response.ok) {
+          const text = await response.text();
+          const vtt = `WEBVTT\n\n${text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')}`;
+          trackUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
+        }
+      } catch {}
+    } else if (format && !['vtt', 'webvtt'].includes(format) && !trackUrl.toLowerCase().includes('.vtt')) {
+      continue;
+    }
+
     const track = document.createElement('track');
     track.kind = 'subtitles';
-    track.label = subtitle.label || subtitle.language || `Subtitle ${index + 1}`;
+    track.label = label;
     track.srclang = subtitle.language || 'und';
-    track.src = subtitle.url;
+    track.src = trackUrl;
     ui.video.appendChild(track);
+
     const option = document.createElement('option');
-    option.value = String(index);
-    option.textContent = track.label;
+    option.value = String(ui.video.querySelectorAll('track').length - 1);
+    option.textContent = label;
     ui.subtitle.appendChild(option);
-  });
+  }
 }
 
 function applySubtitleSelection() {
   const selected = ui.subtitle.value;
-  [...ui.video.textTracks].forEach((track, index) => { track.mode = selected !== 'off' && Number(selected) === index ? 'showing' : 'disabled'; });
+  [...ui.video.textTracks].forEach((track, index) => {
+    track.mode = selected !== 'off' && Number(selected) === index ? 'showing' : 'disabled';
+  });
 }
 
 function cleanupMedia() {
@@ -516,85 +709,54 @@ function cleanupMedia() {
   }
 }
 
-async function handlePlaybackFailure(reason) {
-  if (playerState.failoverLock || playerState.sourceIndex < 0) return;
-  playerState.failoverLock = true;
-  const current = playerState.sources[playerState.sourceIndex];
-  reportSource(current?.id, 'failure', 0, reason);
-  if (!playerState.settings.autoServer) {
-    setStatus(`Server failed (${reason}). Choose another server.`);
-    playerState.failoverLock = false;
-    return;
-  }
-
-  const candidates = playerState.sources.map((source, index) => ({ source, index })).filter(({ index, source }) => index !== playerState.sourceIndex && source.health?.online !== false);
-  const next = candidates[0] || playerState.sources.map((source, index) => ({ source, index })).find(({ index }) => index !== playerState.sourceIndex);
-  if (!next) {
-    setStatus('All configured servers failed.');
-    setFallback('Try again later or choose an external streaming provider below.');
-    playerState.failoverLock = false;
-    return;
-  }
-  setStatus(`${current?.name || 'Server'} failed. Rotating to ${next.source.name}…`);
-  const resumeAt = Number.isFinite(ui.video.currentTime) ? ui.video.currentTime : 0;
-  await loadSource(next.index, { manual: false });
-  if (resumeAt > 0) ui.video.addEventListener('loadedmetadata', () => { if (resumeAt < ui.video.duration - 5) ui.video.currentTime = resumeAt; }, { once: true });
-  playerState.failoverLock = false;
-}
-
-async function renderWatchFallback() {
-  try {
-    const watch = await request(`/api/watch/${playerState.media.type}/${playerState.media.id}`);
-    const groups = [...(watch.flatrate || []), ...(watch.free || []), ...(watch.ads || []), ...(watch.rent || []), ...(watch.buy || [])];
-    const unique = [...new Map(groups.map((provider) => [provider.provider_id, provider])).values()].slice(0, 10);
-    const providers = unique.length ? `<div class="payson-provider-list">${unique.map((provider) => `<span class="payson-provider-chip">${escapeHtml(provider.provider_name)}</span>`).join('')}</div>` : '<p>No US provider listing was returned.</p>';
-    const link = watch.link ? `<a class="primary-button" href="${escapeAttribute(watch.link)}" target="_blank" rel="noopener noreferrer">View streaming options</a>` : '';
-    setFallback(`<h3>Playback source not configured</h3><p>This title does not have an authorized direct source in this deployment.</p>${providers}${link}`);
-  } catch {
-    setFallback('<h3>Playback source not configured</h3><p>Add an authorized HLS or MP4 source for this title to enable direct playback.</p>');
-  }
-}
-
 function progressKey() {
   if (!playerState.media) return '';
-  return playerState.media.type === 'tv' ? `tv:${playerState.media.id}:${playerState.season}:${playerState.episode}` : `movie:${playerState.media.id}`;
+  return playerState.media.type === 'tv'
+    ? `tv:${playerState.media.id}:${playerState.season}:${playerState.episode}`
+    : `movie:${playerState.media.id}`;
 }
 
 function restoreProgress() {
-  const saved = playerState.progress[progressKey()];
-  if (!saved || !Number.isFinite(saved.currentTime) || !Number.isFinite(ui.video.duration)) return;
-  if (saved.currentTime > 10 && saved.currentTime < ui.video.duration - 20) ui.video.currentTime = saved.currentTime;
+  const key = progressKey();
+  const saved = playerState.progress[key];
+  if (!saved || !Number.isFinite(saved.time) || !Number.isFinite(ui.video.duration)) return;
+  if (saved.time > 15 && saved.time < ui.video.duration - 20) ui.video.currentTime = saved.time;
 }
 
 function persistProgressThrottled() {
   const now = Date.now();
-  if (now - playerState.lastProgressWrite < 5000 || !playerState.media || !Number.isFinite(ui.video.duration) || ui.video.duration <= 0) return;
+  if (now - playerState.lastProgressWrite < 3000) return;
   playerState.lastProgressWrite = now;
-  playerState.progress[progressKey()] = {
-    type: playerState.media.type,
-    id: playerState.media.id,
-    title: playerState.media.title,
+  const key = progressKey();
+  if (!key || !Number.isFinite(ui.video.currentTime)) return;
+  playerState.progress[key] = {
+    time: ui.video.currentTime,
+    duration: Number.isFinite(ui.video.duration) ? ui.video.duration : 0,
+    updatedAt: now,
+    title: playerState.media?.title || '',
+    type: playerState.media?.type || '',
+    id: playerState.media?.id || '',
     season: playerState.season,
-    episode: playerState.episode,
-    currentTime: ui.video.currentTime,
-    duration: ui.video.duration,
-    updatedAt: now
+    episode: playerState.episode
   };
   localStorage.setItem(PLAYER_PROGRESS_KEY, JSON.stringify(playerState.progress));
 }
 
 function handleEnded() {
-  delete playerState.progress[progressKey()];
-  localStorage.setItem(PLAYER_PROGRESS_KEY, JSON.stringify(playerState.progress));
-  if (playerState.media?.type === 'tv') void stepEpisode(1);
+  const key = progressKey();
+  if (key) {
+    delete playerState.progress[key];
+    localStorage.setItem(PLAYER_PROGRESS_KEY, JSON.stringify(playerState.progress));
+  }
+  if (playerState.media?.type === 'tv' && playerState.settings.autoplay) void stepEpisode(1);
 }
 
 async function stepEpisode(direction) {
-  if (!playerState.episodes.length) return;
-  const index = playerState.episodes.findIndex((episode) => episode.episode_number === playerState.episode);
-  const next = playerState.episodes[index + direction];
-  if (!next) return;
-  playerState.episode = next.episode_number;
+  if (playerState.media?.type !== 'tv' || !playerState.episodes.length) return;
+  const currentIndex = playerState.episodes.findIndex((episode) => episode.episode_number === playerState.episode);
+  const nextIndex = currentIndex + direction;
+  if (nextIndex < 0 || nextIndex >= playerState.episodes.length) return;
+  playerState.episode = playerState.episodes[nextIndex].episode_number;
   ui.episode.value = String(playerState.episode);
   updateEpisodeButtons();
   await resolveAndPlay();
@@ -606,21 +768,28 @@ function updateEpisodeButtons() {
   ui.nextEpisode.disabled = index < 0 || index >= playerState.episodes.length - 1;
 }
 
-function closePlayer() {
-  persistProgressThrottled();
-  cleanupMedia();
-  ui.root.classList.add('hidden');
-  ui.root.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
+async function renderWatchFallback(diagnostics = []) {
+  try {
+    const watch = await request(`/api/watch/${playerState.media.type}/${playerState.media.id}`);
+    const groups = [...(watch.flatrate || []), ...(watch.free || []), ...(watch.ads || []), ...(watch.rent || []), ...(watch.buy || [])];
+    const unique = [...new Map(groups.map((provider) => [provider.provider_id, provider])).values()].slice(0, 12);
+    const diagnosticText = diagnostics.length ? `<details><summary>Playback diagnostics</summary><pre>${escapeHtml(JSON.stringify(diagnostics, null, 2))}</pre></details>` : '';
+    const providers = unique.length ? `<div class="payson-provider-list">${unique.map((provider) => `<span class="payson-provider-chip">${escapeHtml(provider.provider_name)}</span>`).join('')}</div>` : '<p>No alternate provider listing was returned.</p>';
+    const link = watch.link ? `<a class="primary-button" href="${escapeAttribute(watch.link)}" target="_blank" rel="noopener noreferrer">View provider options</a>` : '';
+    setFallback(`${providers}${link}${diagnosticText}`);
+  } catch {
+    setFallback('No working server is available right now. Try again later.');
+  }
 }
 
-async function openTrailerFor(type, id) {
+async function openTrailerFor(mediaType, id) {
   try {
-    const details = await request(`/api/title/${type}/${id}`);
-    if (!details.trailer?.key) return showToast('No trailer was found for this title.');
-    const modal = document.getElementById('videoModal');
+    const details = await request(`/api/title/${mediaType}/${encodeURIComponent(id)}`);
+    const trailer = details.trailer;
+    if (!trailer?.key) return showToast('No trailer was found for this title.');
     const frame = document.getElementById('videoFrame');
-    frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(details.trailer.key)}?autoplay=1&rel=0&modestbranding=1`;
+    const modal = document.getElementById('videoModal');
+    frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0&modestbranding=1`;
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open');
@@ -629,44 +798,50 @@ async function openTrailerFor(type, id) {
   }
 }
 
-function reportSource(sourceId, event, latencyMs = 0, reason = '') {
-  if (!sourceId) return;
-  fetch('/api/playback/report', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceId, event, latencyMs, reason }),
-    keepalive: true
-  }).catch(() => {});
+function closePlayer() {
+  persistProgressThrottled();
+  cleanupMedia();
+  ui.root.classList.add('hidden');
+  ui.root.setAttribute('aria-hidden', 'true');
+  if (document.getElementById('detailModal')?.classList.contains('hidden') && document.getElementById('videoModal')?.classList.contains('hidden')) document.body.classList.remove('modal-open');
 }
 
 function setStatus(message) {
   ui.status.textContent = message;
-  ui.status.classList.toggle('hidden', !message);
+  ui.status.classList.remove('hidden');
 }
 
 function setFallback(html) {
+  if (!html) {
+    ui.fallback.innerHTML = '';
+    ui.fallback.classList.add('hidden');
+    return;
+  }
   ui.fallback.innerHTML = html;
-  ui.fallback.classList.toggle('hidden', !html);
+  ui.fallback.classList.remove('hidden');
 }
 
 function saveSettings() {
   localStorage.setItem(PLAYER_SETTINGS_KEY, JSON.stringify(playerState.settings));
 }
 
-async function request(url) {
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  const data = await response.json();
+async function request(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || data.error || `Request failed (${response.status})`);
   return data;
 }
 
 function loadJson(key, fallback) {
-  try { return JSON.parse(localStorage.getItem(key) || '') || fallback; }
-  catch { return fallback; }
+  try {
+    return JSON.parse(localStorage.getItem(key) || '') || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeText(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return String(value || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function showToast(message) {
@@ -674,11 +849,16 @@ function showToast(message) {
   toast.className = 'toast';
   toast.textContent = message;
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2600);
+  setTimeout(() => toast.remove(), 3000);
 }
 
 function escapeHtml(value) {
-  return String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function escapeAttribute(value) {
